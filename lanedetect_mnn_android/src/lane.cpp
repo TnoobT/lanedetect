@@ -1,31 +1,27 @@
 #include "lane.hpp"
+// #include "omp.h"
 
-LaneDetect::LaneDetect()
-{
-    m_net = std::shared_ptr<MNN::Interpreter>(MNN::Interpreter::createFromFile(m_model_path));
-    m_backend_config.precision = (MNN::BackendConfig::PrecisionMode) m_precision; // 精度
-    m_backend_config.power = (MNN::BackendConfig::PowerMode) m_power; // 功耗
-    m_backend_config.memory = (MNN::BackendConfig::MemoryMode) m_memory; // 内存占用
-	m_config.backendConfig = &m_backend_config;
-	m_config.type = MNN_FORWARD_AUTO;
-    m_config.numThread = 4;
-	m_session = m_net->createSession(m_config); //创建session
-    m_inTensor = m_net->getSessionInput(m_session, NULL);
-	std::cout << "session created" << std::endl;
-}
+bool LaneDetect::hasGPU = false;
+bool LaneDetect::toUseGPU = false;
+LaneDetect *LaneDetect::detector = nullptr;
 
-LaneDetect::LaneDetect(const char* model_path)
+LaneDetect::LaneDetect(const std::string &mnn_path, bool useGPU)
 {
-    m_net = std::shared_ptr<MNN::Interpreter>(MNN::Interpreter::createFromFile(model_path));
-    m_backend_config.precision = (MNN::BackendConfig::PrecisionMode) m_precision; // 精度
-    m_backend_config.power = (MNN::BackendConfig::PowerMode) m_power; // 功耗
-    m_backend_config.memory = (MNN::BackendConfig::MemoryMode) m_memory; // 内存占用   
-	m_config.backendConfig = &m_backend_config;
-	m_config.type = MNN_FORWARD_AUTO;
+   
+    toUseGPU = hasGPU && useGPU;
+    m_net = std::shared_ptr<MNN::Interpreter>(MNN::Interpreter::createFromFile(mnn_path.c_str()));
+    
     m_config.numThread = 4;
-	m_session = m_net->createSession(m_config); //创建session
+    if (useGPU) {
+        m_config.type = MNN_FORWARD_OPENCL;
+    }
+    m_config.backupType = MNN_FORWARD_CPU;
+    m_backend_config.memory = MNN::BackendConfig::Memory_Normal;  // 内存
+    m_backend_config.power = MNN::BackendConfig::Power_Normal;  // 功耗
+    m_backend_config.precision = MNN::BackendConfig::PrecisionMode::Precision_Low;  // 精度
+    m_config.backendConfig = &m_backend_config;
+    m_session = m_net->createSession(m_config); //创建session
     m_inTensor = m_net->getSessionInput(m_session, NULL);
-	std::cout << "session created" << std::endl;
 }
 
 LaneDetect::~LaneDetect()
@@ -67,7 +63,7 @@ void LaneDetect::showImg(const cv::Mat& img,std::vector<LaneDetect::Lanes> Lanes
     }
 
     cv::imshow("img",tmp_img);
-    cv::waitKey(0);
+    cv::waitKey(1);
     return ;
 }
 
@@ -140,16 +136,18 @@ void LaneDetect::processImg(const cv::Mat& img)
 	auto nchw_Tensor = new MNN::Tensor(m_inTensor, MNN::Tensor::CAFFE); // tensorflow: nhwc, caffe: nchw, caffe_c4: nc4hw4
     ::memcpy(nchw_Tensor->host<float>(), chwImage.data(), nchw_Tensor->elementSize() * 4);
     m_inTensor->copyFromHostTensor(nchw_Tensor);
-
+    // delete nchw_Tensor;
 }
 
-const float* LaneDetect::inference(const cv::Mat& img)
+std::vector<LaneDetect::Lanes> LaneDetect::inference(const cv::Mat& img)
 {
     processImg(img);
     m_net->runSession(m_session);
     auto output= m_net->getSessionOutput(m_session, NULL);
     auto nchwTensor = new MNN::Tensor(output, MNN::Tensor::CAFFE);
     output->copyToHostTensor(nchwTensor);
-    auto score = nchwTensor->host<float>(); // 得到结果指针
-    return score;
+    float* score = nchwTensor->host<float>(); // 得到结果指针
+    std::vector<Lanes> lanes = decodeHeatmap(score);
+    showImg(img,lanes);
+    return lanes;
 }

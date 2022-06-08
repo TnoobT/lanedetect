@@ -9,24 +9,24 @@ LaneDetect::LaneDetect()
 	m_config.backendConfig = &m_backend_config;
 	m_config.type = MNN_FORWARD_AUTO;
     m_config.numThread = 4;
+
+    MNN::CV::ImageProcess::Config img_config; // 图像处理
+    ::memcpy(img_config.mean, m_mean_vals, sizeof(m_mean_vals)); // (img - mean)*norm
+    ::memcpy(img_config.normal, m_norm_vals, sizeof(m_norm_vals));
+    img_config.sourceFormat = MNN::CV::BGR;
+    img_config.destFormat = MNN::CV::RGB;
+    pretreat = std::shared_ptr<MNN::CV::ImageProcess>(MNN::CV::ImageProcess::create(img_config));
+    MNN::CV::Matrix trans;
+    trans.setScale(1.0f, 1.0f);
+    pretreat->setMatrix(trans);
+
 	m_session = m_net->createSession(m_config); //创建session
     m_inTensor = m_net->getSessionInput(m_session, NULL);
+    m_net->resizeTensor(m_inTensor, {1, 3, m_input_size, m_input_size});
+    m_net->resizeSession(m_session);
 	std::cout << "session created" << std::endl;
 }
 
-LaneDetect::LaneDetect(const char* model_path)
-{
-    m_net = std::shared_ptr<MNN::Interpreter>(MNN::Interpreter::createFromFile(model_path));
-    m_backend_config.precision = (MNN::BackendConfig::PrecisionMode) m_precision; // 精度
-    m_backend_config.power = (MNN::BackendConfig::PowerMode) m_power; // 功耗
-    m_backend_config.memory = (MNN::BackendConfig::MemoryMode) m_memory; // 内存占用   
-	m_config.backendConfig = &m_backend_config;
-	m_config.type = MNN_FORWARD_AUTO;
-    m_config.numThread = 4;
-	m_session = m_net->createSession(m_config); //创建session
-    m_inTensor = m_net->getSessionInput(m_session, NULL);
-	std::cout << "session created" << std::endl;
-}
 
 LaneDetect::~LaneDetect()
 {
@@ -121,35 +121,19 @@ std::vector<LaneDetect::Lanes> LaneDetect::decodeHeatmap(const float* hm)
 }
 
 
-void LaneDetect::processImg(const cv::Mat& img)
-{   
-    cv::Mat preImage = img.clone();
-    cv::cvtColor(preImage,preImage,cv::COLOR_BGR2RGB);
-    cv::resize(preImage,preImage,cv::Size(m_input_size,m_input_size));
-	preImage.convertTo(preImage,CV_32FC3,1/127.5,-1); // (img / 127.5) - 1.0
-    std::vector<cv::Mat> bgrChannels(3);
-    cv::split(preImage, bgrChannels);
-    std::vector<float> chwImage;
-    for (auto i = 0; i < bgrChannels.size(); i++)
-    {  
-        //HWC->CHW
-        std::vector<float> data = std::vector<float>(bgrChannels[i].reshape(1, preImage.cols * preImage.rows));
-        chwImage.insert(chwImage.end(), data.begin(), data.end());
-    }
-    
-	auto nchw_Tensor = new MNN::Tensor(m_inTensor, MNN::Tensor::CAFFE); // tensorflow: nhwc, caffe: nchw, caffe_c4: nc4hw4
-    ::memcpy(nchw_Tensor->host<float>(), chwImage.data(), nchw_Tensor->elementSize() * 4);
-    m_inTensor->copyFromHostTensor(nchw_Tensor);
-
-}
-
 const float* LaneDetect::inference(const cv::Mat& img)
 {
-    processImg(img);
+    // 图像处理
+    cv::Mat preImage = img.clone();
+    cv::resize(preImage,preImage,cv::Size(m_input_size,m_input_size));
+    pretreat->convert(preImage.data, m_input_size, m_input_size, 0, m_inTensor);
+    // 推理
     m_net->runSession(m_session);
-    auto output= m_net->getSessionOutput(m_session, NULL);
-    auto nchwTensor = new MNN::Tensor(output, MNN::Tensor::CAFFE);
-    output->copyToHostTensor(nchwTensor);
-    auto score = nchwTensor->host<float>(); // 得到结果指针
+    MNN::Tensor *output= m_net->getSessionOutput(m_session, NULL);
+    
+    MNN::Tensor tensor_scores_host(output, output->getDimensionType());
+    output->copyToHostTensor(&tensor_scores_host);
+
+    auto score = output->host<float>(); // 得到结果指针
     return score;
 }
