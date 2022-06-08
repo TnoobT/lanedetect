@@ -9,7 +9,7 @@ LaneDetect::LaneDetect()
 	m_config.backendConfig = &m_backend_config;
 	m_config.type = MNN_FORWARD_AUTO;
     m_config.numThread = 4;
-
+    
     MNN::CV::ImageProcess::Config img_config; // 图像处理
     ::memcpy(img_config.mean, m_mean_vals, sizeof(m_mean_vals)); // (img - mean)*norm
     ::memcpy(img_config.normal, m_norm_vals, sizeof(m_norm_vals));
@@ -17,7 +17,7 @@ LaneDetect::LaneDetect()
     img_config.destFormat = MNN::CV::RGB;
     pretreat = std::shared_ptr<MNN::CV::ImageProcess>(MNN::CV::ImageProcess::create(img_config));
     MNN::CV::Matrix trans;
-    trans.setScale(1.0f, 1.0f);
+    trans.setScale(1.0f, 1.0f); // scale
     pretreat->setMatrix(trans);
 
 	m_session = m_net->createSession(m_config); //创建session

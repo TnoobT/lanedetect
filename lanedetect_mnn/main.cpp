@@ -7,6 +7,8 @@ using namespace MNN;
 int main()
 {
     string img_path = "../img/1.png";
+
+
     Mat src_img = imread(img_path);
     Mat image = src_img.clone();
     LaneDetect lanedetect;
