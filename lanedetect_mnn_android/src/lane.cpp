@@ -9,12 +9,15 @@ LaneDetect::LaneDetect(const std::string &mnn_path, bool useGPU)
     toUseGPU = hasGPU && useGPU;
 
     m_net = std::shared_ptr<MNN::Interpreter>(MNN::Interpreter::createFromFile(mnn_path.c_str()));
-    m_backend_config.precision = (MNN::BackendConfig::PrecisionMode) m_precision; // 精度
-    m_backend_config.power = (MNN::BackendConfig::PowerMode) m_power; // 功耗
-    m_backend_config.memory = (MNN::BackendConfig::MemoryMode) m_memory; // 内存占用
+    m_backend_config.precision = MNN::BackendConfig::PrecisionMode::Precision_Low;  // 精度
+    m_backend_config.power = MNN::BackendConfig::Power_Normal; // 功耗
+    m_backend_config.memory = MNN::BackendConfig::Memory_Normal; // 内存占用
 	m_config.backendConfig = &m_backend_config;
-	m_config.type = MNN_FORWARD_AUTO;
-    m_config.numThread = 4;
+	m_config.numThread = 4;
+    if (useGPU) {
+        m_config.type = MNN_FORWARD_OPENCL;
+    }
+    m_config.backupType = MNN_FORWARD_CPU;
 
     MNN::CV::ImageProcess::Config img_config; // 图像处理
     ::memcpy(img_config.mean, m_mean_vals, sizeof(m_mean_vals)); // (img - mean)*norm
@@ -54,8 +57,6 @@ inline int LaneDetect::clip(float value)
 void LaneDetect::showImg(const cv::Mat& img,std::vector<LaneDetect::Lanes> Lanes)
 {
     cv::Mat tmp_img = img.clone();
-    int h = tmp_img.rows;
-    int w = tmp_img.cols;
     
     for(auto line:Lanes)
     {
@@ -63,10 +64,6 @@ void LaneDetect::showImg(const cv::Mat& img,std::vector<LaneDetect::Lanes> Lanes
         float y1 = line.y1;
         float x2 = line.x2;
         float y2 = line.y2;
-        x1 = clip(w * x1 / (m_input_size / 2));
-        x2 = clip(w * x2 / (m_input_size / 2));
-        y1 = clip(h * y1 / (m_input_size / 2));
-        y2 = clip(h * y2 / (m_input_size / 2));
 
         cv::line(tmp_img,cv::Point(x1,y1),cv::Point(x2,y2), cv::Scalar(0, 0, 255));
     }
@@ -76,7 +73,7 @@ void LaneDetect::showImg(const cv::Mat& img,std::vector<LaneDetect::Lanes> Lanes
     return ;
 }
 
-std::vector<LaneDetect::Lanes> LaneDetect::decodeHeatmap(const float* hm)
+std::vector<LaneDetect::Lanes> LaneDetect::decodeHeatmap(const float* hm,int w, int h, double threshold, double lens_threshold)
 {   
     // 线段中心点(256*256),线段偏移(4*256*256)
     const float*  displacement = hm+m_hm_size*m_hm_size;
@@ -97,7 +94,8 @@ std::vector<LaneDetect::Lanes> LaneDetect::decodeHeatmap(const float* hm)
             return (center[a] > center[b]); // 从大到小排序
         }
     );
-    std::vector<Lanes> m_lanes;
+    std::vector<Lanes> lanes;
+    
     for (int i = 0; i < index.size(); i++)
     {
         int yy = index[i]/m_hm_size; // 除以宽得行号
@@ -110,24 +108,39 @@ std::vector<LaneDetect::Lanes> LaneDetect::decodeHeatmap(const float* hm)
         Lane.lens = sqrt(pow(Lane.x1 - Lane.x2,2) + pow(Lane.y1 - Lane.y2,2));
         Lane.conf = center[index[i]];
 
-        if (center[index[i]] > m_score_thresh && m_lanes.size() < m_top_k)
+        if (center[index[i]] > threshold && lanes.size() < m_top_k)
         {
-            if ( Lane.lens > m_min_len)
-                m_lanes.push_back(Lane);
+            if ( Lane.lens > lens_threshold)
+            {
+                Lane.x1 = clip(w * Lane.x1 / (m_input_size / 2));
+                Lane.x2 = clip(w * Lane.x2 / (m_input_size / 2));
+                Lane.y1 = clip(h * Lane.y1 / (m_input_size / 2));
+                Lane.y2 = clip(h * Lane.y2 / (m_input_size / 2));
+                lanes.push_back(Lane);
+            }
         }
         else
             break;
     }
     
-    return m_lanes;
+    return lanes;
 
 }
 
 
-std::vector<LaneDetect::Lanes> LaneDetect::detect(const cv::Mat& img)
+std::vector<LaneDetect::Lanes> LaneDetect::detect(const cv::Mat& img, unsigned char* image_bytes, int width, int height, double threshold, double lens_threshold)
 {
     // 图像处理
     cv::Mat preImage = img.clone();
+    auto d11 = img.data[777];
+    auto d12 = img.data[1239];
+    auto d13 = img.data[266*211];
+    auto d14 = img.data[2*3314];
+    auto d15 = img.data[666];
+    auto d16 = img.data[1234];
+    auto d17 = img.data[300*20];
+    auto d18 = img.data[300*200];
+
     cv::resize(preImage,preImage,cv::Size(m_input_size,m_input_size));
     pretreat->convert(preImage.data, m_input_size, m_input_size, 0, m_inTensor);
     // 推理
@@ -138,7 +151,7 @@ std::vector<LaneDetect::Lanes> LaneDetect::detect(const cv::Mat& img)
     output->copyToHostTensor(&tensor_scores_host);
 
     auto score = output->host<float>(); // 得到结果指针
-    std::vector<LaneDetect::Lanes> lanes = decodeHeatmap(score);
+    std::vector<LaneDetect::Lanes> lanes = decodeHeatmap(score, width, height, threshold,lens_threshold);
     showImg(img,lanes);
     return lanes;
 }

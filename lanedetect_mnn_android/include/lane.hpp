@@ -27,8 +27,8 @@ class LaneDetect
     public:
         LaneDetect(const std::string &mnn_path, bool useGPU);
         ~LaneDetect();   
-        std::vector<Lanes> detect(const cv::Mat& img);
-        std::vector<Lanes> decodeHeatmap(const float* heatmap);
+        std::vector<Lanes> detect(const cv::Mat& img,unsigned char* image_bytes, int width, int height, double threshold, double lens_threshold);
+        std::vector<Lanes> decodeHeatmap(const float* heatmap, int width, int height, double threshold, double lens_threshold);
         void showImg(const cv::Mat& img,std::vector<Lanes> Lanes);
         inline int clip(float value);
     private:
@@ -41,14 +41,10 @@ class LaneDetect
 
         const float m_mean_vals[3] = { 127.5f, 127.5f, 127.5f };
         const float m_norm_vals[3] = { 1/127.5f, 1/127.5f, 1/127.5f };
-        float m_score_thresh = 0.2; // 阈值
+       
         int m_input_size     = 512; // 输入尺寸
         int m_hm_size  = 256; // 特征图大小
-        int m_min_len  = 20; // 预测线段的最短长度
         int m_top_k    = 200; // 取200条线
-        int m_precision  = 0; // 精度
-        int m_power      = 0; // 能耗
-        int m_memory     = 0; // 内存
 
     public:
         static LaneDetect *detector;

@@ -11,9 +11,8 @@ int main()
     Mat src_img = imread(img_path);
     Mat image = src_img.clone();
     LaneDetect lanedetect(mnn_path,true);
-    std::vector<LaneDetect::Lanes> lanes = lanedetect.detect(image);
+    std::vector<LaneDetect::Lanes> lanes = lanedetect.detect(image,NULL,image.cols,image.rows,0.2,20);
     
-    // lanedetect.showImg(src_img,lanes);
 
     return 0;
 
