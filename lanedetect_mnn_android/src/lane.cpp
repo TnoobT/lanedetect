@@ -132,14 +132,6 @@ std::vector<LaneDetect::Lanes> LaneDetect::detect(const cv::Mat& img, unsigned c
 {
     // 图像处理
     cv::Mat preImage = img.clone();
-    auto d11 = img.data[777];
-    auto d12 = img.data[1239];
-    auto d13 = img.data[266*211];
-    auto d14 = img.data[2*3314];
-    auto d15 = img.data[666];
-    auto d16 = img.data[1234];
-    auto d17 = img.data[300*20];
-    auto d18 = img.data[300*200];
 
     cv::resize(preImage,preImage,cv::Size(m_input_size,m_input_size));
     pretreat->convert(preImage.data, m_input_size, m_input_size, 0, m_inTensor);
