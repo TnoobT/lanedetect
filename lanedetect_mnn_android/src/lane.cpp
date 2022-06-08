@@ -1,8 +1,14 @@
 #include "lane.hpp"
 
-LaneDetect::LaneDetect()
+bool LaneDetect::hasGPU = false;
+bool LaneDetect::toUseGPU = false;
+LaneDetect *LaneDetect::detector = nullptr;
+
+LaneDetect::LaneDetect(const std::string &mnn_path, bool useGPU)
 {
-    m_net = std::shared_ptr<MNN::Interpreter>(MNN::Interpreter::createFromFile(m_model_path));
+    toUseGPU = hasGPU && useGPU;
+
+    m_net = std::shared_ptr<MNN::Interpreter>(MNN::Interpreter::createFromFile(mnn_path.c_str()));
     m_backend_config.precision = (MNN::BackendConfig::PrecisionMode) m_precision; // 精度
     m_backend_config.power = (MNN::BackendConfig::PowerMode) m_power; // 功耗
     m_backend_config.memory = (MNN::BackendConfig::MemoryMode) m_memory; // 内存占用
@@ -32,7 +38,6 @@ LaneDetect::~LaneDetect()
 {
     m_net->releaseModel();
     m_net->releaseSession(m_session);
-    m_lanes.clear();
 }
 
 inline int LaneDetect::clip(float value)
@@ -71,8 +76,6 @@ void LaneDetect::showImg(const cv::Mat& img,std::vector<LaneDetect::Lanes> Lanes
     return ;
 }
 
-
-
 std::vector<LaneDetect::Lanes> LaneDetect::decodeHeatmap(const float* hm)
 {   
     // 线段中心点(256*256),线段偏移(4*256*256)
@@ -94,7 +97,7 @@ std::vector<LaneDetect::Lanes> LaneDetect::decodeHeatmap(const float* hm)
             return (center[a] > center[b]); // 从大到小排序
         }
     );
-    
+    std::vector<Lanes> m_lanes;
     for (int i = 0; i < index.size(); i++)
     {
         int yy = index[i]/m_hm_size; // 除以宽得行号
@@ -121,7 +124,7 @@ std::vector<LaneDetect::Lanes> LaneDetect::decodeHeatmap(const float* hm)
 }
 
 
-const float* LaneDetect::inference(const cv::Mat& img)
+std::vector<LaneDetect::Lanes> LaneDetect::detect(const cv::Mat& img)
 {
     // 图像处理
     cv::Mat preImage = img.clone();
@@ -135,5 +138,7 @@ const float* LaneDetect::inference(const cv::Mat& img)
     output->copyToHostTensor(&tensor_scores_host);
 
     auto score = output->host<float>(); // 得到结果指针
-    return score;
+    std::vector<LaneDetect::Lanes> lanes = decodeHeatmap(score);
+    showImg(img,lanes);
+    return lanes;
 }

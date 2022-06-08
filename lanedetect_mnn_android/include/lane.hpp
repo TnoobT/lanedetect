@@ -11,22 +11,23 @@
 
 class LaneDetect
 {
-    typedef struct Lanes
-    {
-        float x1;  // 起点
-        float y1;
-        float x2;  // 终点
-        float y2;
-        float lens;
-        float conf;
+    public:
+        typedef struct Lanes
+        {
+            float x1;  // 起点
+            float y1;
+            float x2;  // 终点
+            float y2;
+            float lens;
+            float conf;
 
-    }Lanes;
+        }Lanes;
     
 
     public:
-        LaneDetect();
+        LaneDetect(const std::string &mnn_path, bool useGPU);
         ~LaneDetect();   
-        const float* inference(const cv::Mat& img);
+        std::vector<Lanes> detect(const cv::Mat& img);
         std::vector<Lanes> decodeHeatmap(const float* heatmap);
         void showImg(const cv::Mat& img,std::vector<Lanes> Lanes);
         inline int clip(float value);
@@ -38,10 +39,8 @@ class LaneDetect
         std::shared_ptr<MNN::CV::ImageProcess> pretreat = nullptr;
         MNN::BackendConfig m_backend_config;
 
-        std::vector<Lanes> m_lanes;
         const float m_mean_vals[3] = { 127.5f, 127.5f, 127.5f };
         const float m_norm_vals[3] = { 1/127.5f, 1/127.5f, 1/127.5f };
-        const char* m_model_path = "../models/mlsd_with_max_sigmoid.mnn";
         float m_score_thresh = 0.2; // 阈值
         int m_input_size     = 512; // 输入尺寸
         int m_hm_size  = 256; // 特征图大小
@@ -50,6 +49,11 @@ class LaneDetect
         int m_precision  = 0; // 精度
         int m_power      = 0; // 能耗
         int m_memory     = 0; // 内存
+
+    public:
+        static LaneDetect *detector;
+        static bool hasGPU;
+        static bool toUseGPU;
 
 };
 
